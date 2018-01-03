@@ -1,5 +1,16 @@
 # SuperHajusSudoku
 
+## Technical description and startup
+
+### In order to start the application
+Starting with PyCharm, you should mark source directiory (where client, common, server... are located) as "Sources Root"
+
+### Used libraries
+
+Python 2.7
+
+* TKinter - for building Graphical User Interface
+
 ## Program description
 
 Program "SuperHajusSudoku" consists of three main modules:
