@@ -1,5 +1,3 @@
-from socket import socket, AF_INET, SOCK_STREAM
-from socket import error as soc_error, timeout
 from threading import Thread
 import common.constants as C
 from server.rpc_server_msg_processor import RpcServerMsgProcessor

@@ -2,16 +2,10 @@ from httplib import ResponseNotReady, CannotSendRequest
 
 import common.constants as C
 from common.custom_exceptions import CommunicationException, LogicException
-from common.message_publisher import MessagePublisher
-from common.message_receiver import MessageReceiver
 from common.object_factory import ObjectFactory
-from client.client_msg_processor import ClientMsgProcessor
 import common.message_types as T
-from socket import socket, AF_INET, SOCK_STREAM
-from socket import error as soc_error, timeout
 import threading
 from xmlrpclib import ServerProxy
-from xmlrpclib import Binary
 
 '''
 This is main class for TCP client. It establishes a connection with server.
