@@ -78,13 +78,13 @@ class SudokuGame():
             return ""
         return winner.get_username()
 
-    def add_player(self, username, source):
+    def add_player(self, username):
         if self.players.has_key(username):
             raise LogicException("There is already someone in this game named {}".format(username))
 
         if len(self.players.values()) >= self.max_players:
             raise LogicException("Maximum number of players reached!")
-        player = Player(username, source)
+        player = Player(username)
         self.players[username] = player
         self.trigger_field_change()
 

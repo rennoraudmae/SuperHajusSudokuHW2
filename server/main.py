@@ -1,4 +1,4 @@
-from server.tcp_server import TcpServer
+from server.rpc_server import RpcServer
 from Tkinter import *
 from server.server_gui import Application
 

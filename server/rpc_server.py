@@ -2,17 +2,20 @@ from socket import socket, AF_INET, SOCK_STREAM
 from socket import error as soc_error, timeout
 from threading import Thread
 import common.constants as C
-from server.server_msg_processor import ServerMsgProcessor
-from server.single_client_handler import SingleClientHandler
+from server.rpc_server_msg_processor import RpcServerMsgProcessor
 from sudoku_game import SudokuGame
+from SimpleXMLRPCServer import SimpleXMLRPCServer
+from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
 
 '''
 This class is tcp server itself. It accepts new connections from clients and assigns them to seperate threads.
 If server is closed, then it stops all the threads.
 '''
 
+class RequestHandler(SimpleXMLRPCRequestHandler):
+    rpc_paths = ('/RPC2',)
 
-class TcpServer():
+class RpcServer():
     def __init__(self, server_inet_addr=C.DEFAULT_SERVER_HOST, server_port=C.DEFAULT_SERVER_PORT):
         # constants
         self.SERVER_PORT = server_port
@@ -21,7 +24,9 @@ class TcpServer():
         # member vars
         self.__server_socket = None
         self.__running = False
+        self.__processor = RpcServerMsgProcessor(server=self)
         # init
+        self.__server = None
         self.init_server()
         self.__client_threads = {}
         self.__active_games = {}
@@ -33,28 +38,22 @@ class TcpServer():
         self.__serving_thread.start()
 
     def init_server(self):
-        self.__server_socket = socket(AF_INET, SOCK_STREAM)
-        self.__server_socket.settimeout(2)
-        C.LOG.debug('Server socket created, descriptor %d' % self.__server_socket.fileno())
         try:
-            self.__server_socket.bind((self.SERVER_INET_ADDR, self.SERVER_PORT))
-        except soc_error as e:
-            C.LOG.error('Can\'t start server, error : %s' % str(e))
-            exit(1)
-
-        C.LOG.debug('Server socket bound on %s:%d' % self.__server_socket.getsockname())
-        self.__server_socket.listen(self.__DEFAULT_SERVER_TCP_CLIENTS_QUEUE)
-        C.LOG.info('Accepting requests on TCP %s:%d' % self.__server_socket.getsockname())
+            self.__server = SimpleXMLRPCServer((self.SERVER_INET_ADDR, self.SERVER_PORT), requestHandler=RequestHandler)
+            self.__server.register_introspection_functions()
+            self.__server.register_instance(self.__processor)
+        except Exception as e:
+            C.LOG.error("Error while starting the server: {}".format(e))
 
     def add_new_game(self, game_name, max_players):
         sudoku_game = SudokuGame(game_name, max_players)
         self.__active_games[sudoku_game.get_id()] = sudoku_game
         return sudoku_game.get_id()
 
-    def add_player(self, game_id, username, source):
+    def add_player(self, game_id, username):
         if self.__active_games.has_key(game_id):
             sudoku_game = self.__active_games[game_id]
-            sudoku_game.add_player(username, source)
+            sudoku_game.add_player(username)
             return True
         else:
             return False
@@ -86,25 +85,17 @@ class TcpServer():
         return sudoku_game.get_players()
 
     def serve_forever(self):
-        while self.__running:
-            try:
-                client_socket, source = self.__server_socket.accept()
-                client_thread = SingleClientHandler(
-                    kwargs={'source': source, 'client_socket': client_socket, 'server': self})
-                client_thread.start()
-                self.__client_threads[source] = client_thread
-
-            except (timeout):
-                C.LOG.info('Awaiting connections...')
-            except (soc_error) as e:
-                C.LOG.error('Interrupted receiving the data from %s:%d, ' \
-                            'error: %s' % (source + (e,)))
-                continue
+        try:
+            self.__server.serve_forever()
+        finally:
+            C.LOG.info('Server stopped')
 
     def stop_server(self):
         self.__running = False
-        self.__server_socket.close()
+        self.__server.shutdown()
+        self.__server.server_close()
         self.__serving_thread.join()
+
         for client_thread in self.__client_threads.values():
             client_thread.stop()
             client_thread.join()

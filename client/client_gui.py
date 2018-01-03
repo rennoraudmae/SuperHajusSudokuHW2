@@ -1,7 +1,7 @@
 from Tkinter import *
 import tkMessageBox
 import common.constants as C
-from client.tcp_client import TcpClient
+from client.rpc_client import RpcClient
 from multiplayer_game import MultiplayerGame
 
 '''
@@ -44,7 +44,7 @@ class Application(Frame):
                     self.username))
             return
 
-        self.client = TcpClient(host=self.host, port=self.port)
+        self.client = RpcClient(host=self.host, port=self.port)
         if self.client.is_connected():
             self.show_info("Connected to server!")
             self.open_multiplayer_game()
@@ -64,9 +64,6 @@ class Application(Frame):
             return False
 
         return True
-
-    def ping(self):
-        self.client.send_message(message="PING")
 
     def create_widgets(self):
         QUIT = Button(self)
@@ -94,11 +91,6 @@ class Application(Frame):
         connect_to_server["text"] = "CONNECT TO SERVER"
         connect_to_server["command"] = self.connect_to_server
         connect_to_server.grid(row=3, column=0)
-
-        ping = Button(self)
-        ping["text"] = "PING",
-        ping["command"] = self.ping
-        ping.grid(row=4, column=0)
 
         self.user_listbox_var.set("Choose a nickname")
         self.user_listbox_var.trace('w', self.on_dropdown_changed)

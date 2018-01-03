@@ -1,7 +1,7 @@
 from Tkinter import *
 import tkMessageBox
 import common.constants as C
-from client.tcp_client import TcpClient
+from client.rpc_client import RpcClient
 from client.game_field import GameField
 from common.custom_exceptions import LogicException
 

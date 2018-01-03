@@ -1,4 +1,5 @@
-import ntpath
+from httplib import ResponseNotReady, CannotSendRequest
+
 import common.constants as C
 from common.custom_exceptions import CommunicationException, LogicException
 from common.message_publisher import MessagePublisher
@@ -9,8 +10,8 @@ import common.message_types as T
 from socket import socket, AF_INET, SOCK_STREAM
 from socket import error as soc_error, timeout
 import threading
-import time
-import sys
+from xmlrpclib import ServerProxy
+from xmlrpclib import Binary
 
 '''
 This is main class for TCP client. It establishes a connection with server.
@@ -18,26 +19,29 @@ It also initializes sending different commands to server and receives responses 
 '''
 
 
-class TcpClient():
+class RpcClient():
     def __init__(self, host=C.DEFAULT_SERVER_HOST, port=C.DEFAULT_SERVER_PORT):
         self.__host = host
         self.__port = port
+        self.__proxy = None
         self.__connected = False
         self.__running = True
         self.__game_field = []
         self.__lock = threading.Lock()
+        self.start_client()
 
+    def start_client(self):
         try:
-            self.__socket = socket(AF_INET, SOCK_STREAM)
-            self.__socket.connect((self.__host, self.__port))
-            self.__socket.settimeout(60)
+            self.__proxy = ServerProxy("http://{}:{}".format(self.__host, self.__port))
             self.__connected = True
         except Exception as e:
             C.LOG.error('Can\'t connect to server, error : %s' % str(e))
             return
 
-        self.__message_publisher = MessagePublisher(socket=self.__socket)
-        self.__message_receiver = MessageReceiver(socket=self.__socket, processor=ClientMsgProcessor(self))
+        C.LOG.info("Connected to server!")
+
+        methods = filter(lambda x: 'system.' not in x, self.__proxy.system.listMethods())
+        C.LOG.debug("Remote methods are: {}".format(methods))
 
     def is_connected(self):
         return self.__connected
@@ -46,7 +50,7 @@ class TcpClient():
         self.__game_field = field
 
     def request_game_state(self, game_id):
-        msg, type = self.__send_message_threadsafe(game_id, T.REQ_GAME_STATE)
+        msg, type = self.__call_proxy("game_state", game_id)
         if type == T.RESP_OK:
             C.LOG.info("Game still running")
             return False
@@ -54,14 +58,14 @@ class TcpClient():
             return msg
 
     def send_message(self, message):
-        msg, type = self.__send_message_threadsafe(message, T.REQ_SIMPLE_MESSAGE)
+        msg, type = self.__call_proxy("simple_message", message)
         if type == T.RESP_OK:
             C.LOG.info("Got answer to simple message: {}".format(msg))
         else:
             C.LOG.warning(msg)
 
     def new_game_request(self, game_name, max_players):
-        msg, type = self.__send_message_threadsafe("{}:{}".format(game_name, max_players), T.REQ_NEW_GAME)
+        msg, type = self.__call_proxy("new_game", "{}:{}".format(game_name, max_players))
         if type == T.RESP_OK:
             C.LOG.info("New game created with id: {}".format(msg))
             return msg
@@ -70,7 +74,7 @@ class TcpClient():
             raise LogicException("New game creation failed with message: {}".format(msg))
 
     def join_game(self, game_id, username):
-        msg, type = self.__send_message_threadsafe("{}:{}".format(game_id, username), T.REQ_JOIN_GAME)
+        msg, type = self.__call_proxy("join_game", "{}:{}".format(game_id, username))
         if type == T.RESP_OK:
             C.LOG.info("Joined game with id: {}".format(game_id))
         else:
@@ -78,7 +82,7 @@ class TcpClient():
             raise LogicException("New game creation failed with message: {}".format(msg))
 
     def leave_game(self, game_id, username):
-        msg, type = self.__send_message_threadsafe("{}:{}".format(game_id, username), T.REQ_LEAVE_GAME)
+        msg, type = self.__call_proxy("leave_game", "{}:{}".format(game_id, username))
         if type == T.RESP_OK:
             C.LOG.info("Left game with id: {}".format(game_id))
         else:
@@ -86,15 +90,15 @@ class TcpClient():
             raise LogicException("Leaving game failed with: {}".format(msg))
 
     def get_all_games(self):
-        msg, type = self.__send_message_threadsafe(" ", T.REQ_ALL_GAMES)
+        msg, type = self.__call_proxy("get_all_games")
         if type == T.RESP_OK:
             return msg
         else:
             C.LOG.warning(msg)
             raise LogicException("Game requesting failed with error: {}".format(msg))
-    
+
     def check_nr(self, nr, address, username, game_id):
-        msg, type = self.__send_message_threadsafe("{}:{}:{}:{}".format(nr, address, game_id, username), T.REQ_CHECK_NR)
+        msg, type = self.__call_proxy("check_nr", "{}:{}:{}:{}".format(nr, address, game_id, username))
         if type == T.RESP_OK:
             return msg
         if type == T.RESP_NOK:
@@ -102,41 +106,40 @@ class TcpClient():
         else:
             C.LOG.warning(msg)
             raise LogicException("Game requesting failed with error: {}".format(msg))
-    
+
     def get_game_field(self):
         return self.__game_field
 
     def request_game_field(self, game_id):
-        msg, type = self.__send_message_threadsafe(game_id, T.UPDATE_FIELD)
-        if type == T.RESP_OK:
-            return ObjectFactory.field_from_json(msg)
-        else:
-            C.LOG.warning(msg)
-            raise LogicException("Could not retreive new field from server: {}".format(msg))
+        try:
+            msg, type = self.__call_proxy("get_game_field", game_id)
+            if type == T.RESP_OK:
+                return ObjectFactory.field_from_json(msg)
+            else:
+                C.LOG.warning(msg)
+                return self.__game_field
+        except ResponseNotReady as e:
+            return self.__game_field
 
     def request_players(self, game_id):
-        msg, type = self.__send_message_threadsafe(game_id, T.REQ_PLAYER_LIST)
+        msg, type = self.__call_proxy("player_list", game_id)
         if type == T.RESP_OK:
             return ObjectFactory.players_from_json(msg)
         else:
             C.LOG.warning(msg)
             raise LogicException("Could not retreive players list from server: {}".format(msg))
 
-    def send_new_nr(self, nr, address):
-        msg, type = self.__send_message("{}:{}".format(nr, address), T.REQ_CHECK_NR)
-        return type
-
-    def __send_message_threadsafe(self, message, type):
-        with self.__lock:
-            if not self.__connected:
-                raise CommunicationException("Server not connected")
-
-            if len(type) > 0:
-                try:
-                    self.__message_publisher.publish(message_and_type=(message, type))
-                    received_message = self.__message_receiver.receive()
-                    return received_message
-                except soc_error as e:
-                    C.LOG.error('Couldn\'t get response from server, error : %s' % str(e))
-                except Exception as e:
-                    C.LOG.error("Exception on processing response: {}".format(e))
+    def __call_proxy(self, func_name, args=None):
+        try:
+            func = getattr(self.__proxy, func_name)
+            if args is not None:
+                return func(args)
+            else:
+                return func()
+        except AttributeError:
+            C.LOG.error("{} not found".format(func_name))
+            return " ", T.RESP_ERR
+        except ResponseNotReady as e:
+            return e, T.RESP_ERR
+        except CannotSendRequest as e:
+            return e, T.RESP_ERR

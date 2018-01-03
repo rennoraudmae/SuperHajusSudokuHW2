@@ -12,17 +12,16 @@ This is server side message processor, which processes only server specific mess
 '''
 
 
-class ServerMsgProcessor(object, MessageProcessor):
-    def __init__(self, server, source):
-        super(ServerMsgProcessor, self).__init__()
+class RpcServerMsgProcessor(object, MessageProcessor):
+    def __init__(self, server):
+        super(RpcServerMsgProcessor, self).__init__()
         self.server = server
-        self.source = source
 
     def ping(self):
         return " ", T.RESP_OK
 
-    def new_game(self):
-        params = self._message.split(":")
+    def new_game(self, message):
+        params = message.split(":")
         game_name = params[0]
         max_players = params[1]
         new_game_id = self.server.add_new_game(game_name, max_players)
@@ -41,12 +40,12 @@ class ServerMsgProcessor(object, MessageProcessor):
 
         return game_ids, T.RESP_OK
 
-    def join_game(self):
-        params = self._message.split(":")
+    def join_game(self, message):
+        params = message.split(":")
         game_id = params[0]
         username = params[1]
         try:
-            success = self.server.add_player(game_id, username, self.source)
+            success = self.server.add_player(game_id, username)
             if success:
                 return " ", T.RESP_OK
             else:
@@ -54,15 +53,15 @@ class ServerMsgProcessor(object, MessageProcessor):
         except LogicException as e:
             return e.message, T.RESP_ERR
 
-    def leave_game(self):
-        params = self._message.split(":")
+    def leave_game(self, message):
+        params = message.split(":")
         game_id = params[0]
         username = params[1]
         self.server.remove_player(game_id, username)
         return " ", T.RESP_OK
 
-    def check_nr(self):
-        params = self._message.split(":")
+    def check_nr(self, message):
+        params = message.split(":")
         try:
             nr = params[0]
             address = params[1]
@@ -75,24 +74,24 @@ class ServerMsgProcessor(object, MessageProcessor):
             return " ", T.RESP_OK
         return "rejected", T.RESP_NOK
 
-    def game_state(self):
-        game_id = self._message
+    def game_state(self, message):
+        game_id = message
         state = self.server.get_game_state(game_id)
         if state is False:
             return " ", T.RESP_OK
         else:
             return state, T.RESP_VOID
 
-    def player_list(self):
-        game_id = self._message
+    def player_list(self, message):
+        game_id = message
         try:
             players = self.server.get_game_player_list(game_id)
             return ObjectFactory.players_to_json(players), T.RESP_OK
         except LogicException as e:
             return e.message, T.RESP_ERR
 
-    def get_game_field(self):
-        game_id = self._message
+    def get_game_field(self, message):
+        game_id = message
         game_field = self.server.get_game_field(game_id)
 
         return ObjectFactory.field_to_json(game_field), T.RESP_OK

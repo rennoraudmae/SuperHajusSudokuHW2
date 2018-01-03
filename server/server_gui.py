@@ -1,6 +1,6 @@
 from Tkinter import *
 import common.constants as C
-from server.tcp_server import TcpServer
+from server.rpc_server import RpcServer
 
 '''
 Here is defined server GUI
@@ -20,7 +20,7 @@ class Application(Frame):
     def start_server(self):
         host = self.host_input.get()
         port = int(self.port_input.get())
-        self.server = TcpServer(server_inet_addr=host, server_port=port)
+        self.server = RpcServer(server_inet_addr=host, server_port=port)
         self.server.start_server()
         self.start_server_btn['state'] = DISABLED
 
