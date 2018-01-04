@@ -22,6 +22,7 @@ class RpcClient():
         self.__running = True
         self.__game_field = []
         self.__lock = threading.Lock()
+        self.__server_name = None
         self.start_client()
 
     def start_client(self):

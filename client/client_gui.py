@@ -3,7 +3,9 @@ import tkMessageBox
 import common.constants as C
 from client.rpc_client import RpcClient
 from multiplayer_game import MultiplayerGame
-
+import pika
+import uuid
+from time import sleep
 '''
 Here is defined client GUI.
 '''
@@ -24,11 +26,23 @@ class Application(Frame):
         self.host = None
         self.port = None
         self.username = None
+        self.broker_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+        self.response_channel_name = str(uuid.uuid4())
+        self.send_channel = self.broker_connection.channel()
+        self.receive_channel = self.broker_connection.channel()
+
 
     def connect_to_server(self):
         self.host = self.host_input.get()
         self.port = int(self.port_input.get())
         self.username = self.user_input.get()
+
+        if len(self.server_list.curselection()) == 0:
+            self.show_info("Error: No server selected.")
+            return
+        else:
+            index = int(self.server_list.curselection()[0])
+            serv_name = self.server_list.get(index)
 
         if self.host is None:
             self.show_info("Error: no server host specified")
@@ -65,12 +79,28 @@ class Application(Frame):
 
         return True
 
+    def __timeout_callback(self):
+        self.receive_channel.close()
+
+    def who_is_there(self):
+
+        self.send_channel.exchange_declare(exchange='discovery', exchange_type='fanout')
+        self.receive_channel.queue_declare(queue=self.response_channel_name)
+        message = self.response_channel_name
+        self.send_channel.basic_publish(exchange='discovery', routing_key='', body=message)
+        self.server_list.delete(0,END)
+        for i in range(100):
+            print self.receive_channel.get_waiting_message_count()
+            method, properties, body = self.receive_channel.basic_get(queue=self.response_channel_name, no_ack=True)
+            if body is not None:
+                self.server_list.insert(END, body)
+
     def create_widgets(self):
         QUIT = Button(self)
         QUIT["text"] = "QUIT"
         QUIT["fg"] = "red"
         QUIT["command"] = self.quit
-        QUIT.grid(row=3, column=1)
+        QUIT.grid(row=4, column=1)
 
         Label(self, text="Server port").grid(row=0)
         self.port_input = Entry(self)
@@ -87,15 +117,25 @@ class Application(Frame):
         self.user_input.insert(0, "(insert user name)")
         self.user_input.grid(row=2, column=1)
 
-        connect_to_server = Button(self)
-        connect_to_server["text"] = "CONNECT TO SERVER"
-        connect_to_server["command"] = self.connect_to_server
-        connect_to_server.grid(row=3, column=0)
+        connect_to_server_btn = Button(self)
+        connect_to_server_btn["text"] = "CONNECT TO SERVER"
+        connect_to_server_btn["command"] = self.connect_to_server
+        connect_to_server_btn.grid(row=4, column=0)
+
+        get_server_list = Button(self)
+        get_server_list["text"] = "Get server list"
+        get_server_list["command"] = self.who_is_there
+        get_server_list.grid(row=3, column=0)
+
+        self.server_list = Listbox(self.master, selectmode=SINGLE, height=2)
+        self.server_list.grid(row=3, column=0)
+
 
         self.user_listbox_var.set("Choose a nickname")
         self.user_listbox_var.trace('w', self.on_dropdown_changed)
         self.user_listbox = OptionMenu(self, self.user_listbox_var, "Brain112", "Sudoku15", "WhatYou")
         self.user_listbox.grid(row=2, column=2)
+
 
     def on_dropdown_changed(self, index, value, op):
         self.user_input.delete(0, 'end')

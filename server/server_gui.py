@@ -13,6 +13,7 @@ class Application(Frame):
         self.pack()
         self.host_input = None
         self.port_input = None
+        self.name_input = None
         self.files_input = None
         self.start_server_btn = None
         self.create_widgets()
@@ -20,7 +21,8 @@ class Application(Frame):
     def start_server(self):
         host = self.host_input.get()
         port = int(self.port_input.get())
-        self.server = RpcServer(server_inet_addr=host, server_port=port)
+        name = self.name_input.get()
+        self.server = RpcServer(server_inet_addr=host, server_port=port, server_name=name)
         self.server.start_server()
         self.start_server_btn['state'] = DISABLED
 
@@ -45,6 +47,11 @@ class Application(Frame):
         self.host_input = Entry(self)
         self.host_input.insert(0, str(C.DEFAULT_SERVER_HOST))
         self.host_input.grid(row=1, column=1)
+
+        Label(self, text="Server name").grid(row=2)
+        self.name_input = Entry(self)
+        self.name_input.insert(0,'')
+        self.name_input.grid(row=2, column=1)
 
         self.start_server_btn = Button(self)
         self.start_server_btn["text"] = "Start server"

@@ -4,6 +4,7 @@ from server.rpc_server_msg_processor import RpcServerMsgProcessor
 from sudoku_game import SudokuGame
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
+import pika
 
 '''
 This class is tcp server itself. It accepts new connections from clients and assigns them to seperate threads.
@@ -14,7 +15,7 @@ class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ('/RPC2',)
 
 class RpcServer():
-    def __init__(self, server_inet_addr=C.DEFAULT_SERVER_HOST, server_port=C.DEFAULT_SERVER_PORT):
+    def __init__(self, server_inet_addr=C.DEFAULT_SERVER_HOST, server_port=C.DEFAULT_SERVER_PORT, server_name=None):
         # constants
         self.SERVER_PORT = server_port
         self.SERVER_INET_ADDR = server_inet_addr
@@ -23,6 +24,7 @@ class RpcServer():
         self.__server_socket = None
         self.__running = False
         self.__processor = RpcServerMsgProcessor(server=self)
+        self.__broker_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
         # init
         self.__server = None
         self.init_server()
@@ -30,10 +32,13 @@ class RpcServer():
         self.__active_games = {}
 
         self.__serving_thread = Thread(target=self.serve_forever)
+        self.__discovery_thread = Thread(target=self.discovery_loop)
+        self.server_name = server_name
 
     def start_server(self):
         self.__running = True
         self.__serving_thread.start()
+        self.__discovery_thread.start()
 
     def init_server(self):
         try:
@@ -87,6 +92,26 @@ class RpcServer():
             self.__server.serve_forever()
         finally:
             C.LOG.info('Server stopped')
+
+    def discovery_loop(self):
+        #code is based on: https://www.rabbitmq.com/tutorials/tutorial-three-python.html
+        channel = self.__broker_connection.channel()
+        channel.exchange_declare(exchange='discovery', exchange_type='fanout')
+
+        result = channel.queue_declare(exclusive=True)
+        queue_name = result.method.queue
+
+        channel.queue_bind(exchange='discovery', queue=queue_name)
+
+        def callback(ch, method, properties, body):
+            C.LOG.info('Discovery request received. My name is %s' % self.server_name)
+            channel.basic_publish(exchange='', routing_key=body, body=self.server_name)
+
+        channel.basic_consume(callback,
+                              queue=queue_name,
+                              no_ack=True)
+
+        channel.start_consuming()
 
     def stop_server(self):
         self.__running = False
