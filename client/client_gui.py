@@ -14,14 +14,16 @@ Here is defined client GUI.
 class Application(Frame):
     def __init__(self, master, controller):
         Frame.__init__(self, master)
+        self.master = master
         self.controller = controller
         self.host_input = None
         self.port_input = None
         self.user_input = None
-        self.user_listbox_var = StringVar(self)
+
         #
         self.client = None
-        self.pack()
+        #self.pack()
+        self.user_listbox_var = StringVar(self)
         self.create_widgets()
         self.host = None
         self.port = None
@@ -56,6 +58,7 @@ class Application(Frame):
             self.show_info("Error: connecting to server failed!")
 
     def open_multiplayer_game(self):
+        self.server_list.grid_forget()
         multiplayer_game = MultiplayerGame(client=self.client, username=self.username, master=self.master,
                                            controller=self.controller)
         multiplayer_game.grid(row=0, column=0, sticky="nsew")
@@ -92,6 +95,8 @@ class Application(Frame):
                     name = data[0]
                     addr = data[1]
                     port = int(data[2])
+                    if len(name) == 0:
+                        name = 'nameless'
                     while name in self.available_servers:
                         name = name + '0'
                     self.server_list.insert(END, name)
@@ -116,11 +121,11 @@ class Application(Frame):
         connect_to_server_btn.grid(row=4, column=0)
 
         get_server_list = Button(self)
-        get_server_list["text"] = "Get server list"
+        get_server_list["text"] = "Find servers"
         get_server_list["command"] = self.who_is_there
         get_server_list.grid(row=3, column=0)
 
-        self.server_list = Listbox(self.master, selectmode=SINGLE, height=2)
+        self.server_list = Listbox(self.master, selectmode=SINGLE, height=5, width=40)
         self.server_list.grid(row=3, column=0)
 
 
