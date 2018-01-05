@@ -94,7 +94,7 @@ class RpcServer():
             C.LOG.info('Server stopped')
 
     def discovery_loop(self):
-        # init multicast
+        # code based on: https://pymotw.com/2/socket/multicast.html
         multicast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         multicast_sock.bind(('', C.MULTICAST_GROUP_PORT))
         group = socket.inet_aton(C.MULTICAST_GROUP_ADDR)

@@ -76,6 +76,7 @@ class Application(Frame):
         self.receive_channel.close()
 
     def who_is_there(self):
+        #code based on: https://pymotw.com/2/socket/multicast.html
         multicast_group = (C.MULTICAST_GROUP_ADDR, C.MULTICAST_GROUP_PORT)
         multicast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         multicast_sock.settimeout(0.2)
