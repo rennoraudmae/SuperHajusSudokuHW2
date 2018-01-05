@@ -4,7 +4,8 @@ from server.rpc_server_msg_processor import RpcServerMsgProcessor
 from sudoku_game import SudokuGame
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler
-import pika
+import socket
+import struct
 
 '''
 This class is tcp server itself. It accepts new connections from clients and assigns them to seperate threads.
@@ -24,16 +25,15 @@ class RpcServer():
         self.__server_socket = None
         self.__running = False
         self.__processor = RpcServerMsgProcessor(server=self)
-        self.__broker_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
         # init
         self.__server = None
         self.init_server()
         self.__client_threads = {}
         self.__active_games = {}
-
-        self.__serving_thread = Thread(target=self.serve_forever)
-        self.__discovery_thread = Thread(target=self.discovery_loop)
         self.server_name = server_name
+
+        self.__discovery_thread = Thread(target=self.discovery_loop)
+        self.__serving_thread = Thread(target=self.serve_forever)
 
     def start_server(self):
         self.__running = True
@@ -94,24 +94,17 @@ class RpcServer():
             C.LOG.info('Server stopped')
 
     def discovery_loop(self):
-        #code is based on: https://www.rabbitmq.com/tutorials/tutorial-three-python.html
-        channel = self.__broker_connection.channel()
-        channel.exchange_declare(exchange='discovery', exchange_type='fanout')
-
-        result = channel.queue_declare(exclusive=True)
-        queue_name = result.method.queue
-
-        channel.queue_bind(exchange='discovery', queue=queue_name)
-
-        def callback(ch, method, properties, body):
-            C.LOG.info('Discovery request received. My name is %s' % self.server_name)
-            channel.basic_publish(exchange='', routing_key=body, body=self.server_name)
-
-        channel.basic_consume(callback,
-                              queue=queue_name,
-                              no_ack=True)
-
-        channel.start_consuming()
+        # init multicast
+        multicast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        multicast_sock.bind(('', C.MULTICAST_GROUP_PORT))
+        group = socket.inet_aton(C.MULTICAST_GROUP_ADDR)
+        mreq = struct.pack('4sL', group, socket.INADDR_ANY)
+        multicast_sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        while True:
+            data, address = multicast_sock.recvfrom(1024)
+            if data == C.WHO_IS_THERE:
+                message = '%s:%s:%s' % (self.server_name, self.SERVER_INET_ADDR, self.SERVER_PORT)
+                multicast_sock.sendto(message, address)
 
     def stop_server(self):
         self.__running = False

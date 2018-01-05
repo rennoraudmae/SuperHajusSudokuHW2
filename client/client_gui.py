@@ -3,8 +3,8 @@ import tkMessageBox
 import common.constants as C
 from client.rpc_client import RpcClient
 from multiplayer_game import MultiplayerGame
-import pika
-import uuid
+import socket
+import struct
 from time import sleep
 '''
 Here is defined client GUI.
@@ -25,16 +25,12 @@ class Application(Frame):
         self.create_widgets()
         self.host = None
         self.port = None
+        self.available_servers = {}
         self.username = None
-        self.broker_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
-        self.response_channel_name = str(uuid.uuid4())
-        self.send_channel = self.broker_connection.channel()
-        self.receive_channel = self.broker_connection.channel()
+
 
 
     def connect_to_server(self):
-        self.host = self.host_input.get()
-        self.port = int(self.port_input.get())
         self.username = self.user_input.get()
 
         if len(self.server_list.curselection()) == 0:
@@ -43,14 +39,8 @@ class Application(Frame):
         else:
             index = int(self.server_list.curselection()[0])
             serv_name = self.server_list.get(index)
-
-        if self.host is None:
-            self.show_info("Error: no server host specified")
-            return
-
-        if self.port is None:
-            self.show_info("Error: no server port specified")
-            return
+            self.host, self.port = self.available_servers[serv_name]
+            C.LOG.info('Connecting to %s:%s' % (self.host, self.port))
 
         if not self.check_username():
             self.show_info(
@@ -83,34 +73,37 @@ class Application(Frame):
         self.receive_channel.close()
 
     def who_is_there(self):
-
-        self.send_channel.exchange_declare(exchange='discovery', exchange_type='fanout')
-        self.receive_channel.queue_declare(queue=self.response_channel_name)
-        message = self.response_channel_name
-        self.send_channel.basic_publish(exchange='discovery', routing_key='', body=message)
-        self.server_list.delete(0,END)
-        for i in range(100):
-            print self.receive_channel.get_waiting_message_count()
-            method, properties, body = self.receive_channel.basic_get(queue=self.response_channel_name, no_ack=True)
-            if body is not None:
-                self.server_list.insert(END, body)
-
+        multicast_group = (C.MULTICAST_GROUP_ADDR, C.MULTICAST_GROUP_PORT)
+        multicast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        multicast_sock.settimeout(0.2)
+        ttl = struct.pack('b', 1)
+        multicast_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        self.server_list.delete(1,END)
+        self.available_servers = {}
+        try:
+            multicast_sock.sendto(C.WHO_IS_THERE, multicast_group)
+            while True:
+                try:
+                    data, server = multicast_sock.recvfrom(1024)
+                except socket.timeout:
+                    break
+                else:
+                    data = data.split(C.DELI)
+                    name = data[0]
+                    addr = data[1]
+                    port = int(data[2])
+                    while name in self.available_servers:
+                        name = name + '0'
+                    self.server_list.insert(END, name)
+                    self.available_servers[name] = (addr, port)
+        finally:
+            multicast_sock.close()
     def create_widgets(self):
         QUIT = Button(self)
         QUIT["text"] = "QUIT"
         QUIT["fg"] = "red"
         QUIT["command"] = self.quit
         QUIT.grid(row=4, column=1)
-
-        Label(self, text="Server port").grid(row=0)
-        self.port_input = Entry(self)
-        self.port_input.insert(0, str(C.DEFAULT_SERVER_PORT))
-        self.port_input.grid(row=0, column=1)
-
-        Label(self, text="Server host").grid(row=1)
-        self.host_input = Entry(self)
-        self.host_input.insert(0, str(C.DEFAULT_SERVER_HOST))
-        self.host_input.grid(row=1, column=1)
 
         Label(self, text="Username").grid(row=2)
         self.user_input = Entry(self)
